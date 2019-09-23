@@ -33,7 +33,12 @@ function bayesPR(genoTrain, phenoTrain, snpInfo, chrs, fixedRegSize, varGenotypi
     tempBetaVec     = zeros(Float64,nMarkers) #initial values as "0"
     μ               = mean(y)
     X              .-= ones(Float64,nRecords)*2p
-    xpx             = diag(X'X)
+    xpx=[]
+    for i in 1:nMarkers
+    push!(xpx,dot(X[:,i],X[:,i]))
+    end
+
+    #xpx             = diag(X'X)
     ycorr           = y .- μ
     #MCMC starts here
     for iter in 1:chainLength
