@@ -78,7 +78,7 @@ function prepRegionData(snpInfo,chrs,genoTrain,fixedRegSize)
     if size(mapData,2)<4
         mapData = hcat(collect(1:size(mapData,1)),mapData,makeunique=true)
     end
-    headMap = [:snpID, :chrID, :pos, :index]
+    headMap = [:snpID, :chrID, :pos, :snpOrder]
     rename!(mapData, names(mapData), headMap)
     print(mapData[1:4,:])
     mapData[:snpID] = ["M$i" for i in 1:size(mapData,1)] #to convert original IDs like "HAPMAP43437-BTA-101873"
