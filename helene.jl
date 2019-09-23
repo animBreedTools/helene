@@ -74,13 +74,13 @@ function prepRegionData(snpInfo,chrs,genoTrain,fixedRegSize)
     SNPgroups = []
 #    mapData = readtable(pwd()"/$mapFile", header=false)
     ###only for our map file
-    mapData = readtable("$snpInfo", header=false, separator=',')
-    if size(mapData,2)<5
+    mapData = readtable("$snpInfo", header=true, separator=' ')
+    if size(mapData,2)<4
         mapData = hcat(collect(1:size(mapData,1)),mapData,makeunique=true)
     end
-    headMap = [:row, :snpID, :snpOrder ,:chrID, :pos]
-    rename!(mapData , names(mapData), headMap)
-    print(mapData[1:5,:])
+    headMap = [:snpID, :chrID, :pos, :index]
+    rename!(mapData, names(mapData), headMap)
+    print(mapData[1:4,:])
     mapData[:snpID] = ["M$i" for i in 1:size(mapData,1)] #to convert original IDs like "HAPMAP43437-BTA-101873"
     print(mapData[1:10,:])
     ###
