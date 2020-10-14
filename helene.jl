@@ -265,7 +265,7 @@ function fastInv(a::Matrix)
     return c
 end
 
-function w_mtBayesPR_shaoLei(genoTrain::DataFrame,genoTrain2::DataFrame, phenoTrain, phenoTrain2,weights,weights2,snpInfo::String, chrs::Int64, fixedRegSize::Int64, varGenotypic::Array{Float64}, varResidual1::Float64,varResidual2::Float64,chainLength::Int64, burnIn::Int64, outputFreq::Int64, onScreen::Bool)
+function w_mtBayesPR_shaoLei(genoTrain::DataFrame,genoTrain2::DataFrame, phenoTrain, phenoTrain2,snpInfo::String, chrs::Int64, fixedRegSize::Int64, varGenotypic::Array{Float64}, varResidual1::Float64,varResidual2::Float64,chainLength::Int64, burnIn::Int64, outputFreq::Int64, onScreen::Bool)
     SNPgroups = prepRegionData(snpInfo, chrs, genoTrain, fixedRegSize)
     these2Keep = collect((burnIn+outputFreq):outputFreq:chainLength) #print these iterations
     nRegions    = length(SNPgroups)
@@ -282,10 +282,6 @@ function w_mtBayesPR_shaoLei(genoTrain::DataFrame,genoTrain2::DataFrame, phenoTr
     println("Y1 is this size", size(Y1))
     println("Y2 is this size", size(Y2))
     nTraits, nRecords1, nRecords2 , nMarkers   = 2, size(Y1,1), size(Y2,1), size(X1,2)
-    w           = convert(Array{Float64}, weights)
-    iD          = full(Diagonal(w))  # Dii is wii=r2/(1-r2)==>iDii is (1-r2)/r2
-    w2           = convert(Array{Float64}, weights2)
-    iD2          = full(Diagonal(w2))  # Dii is wii=r2/(1-r2)==>iDii is (1-r2)/r2
     fileControl(nTraits,fixedRegSize)
     p1           = mean(X1,dims=1)./2.0
     sum2pq1      = sum(2*(1 .- p1).*p1)
@@ -321,16 +317,14 @@ const    scaleRes2    = varResidual2*(dfRes-2.0)/dfRes
     X1             .-= ones(Float64,nRecords1)*2*p1    
     X2             .-= ones(Float64,nRecords2)*2*p2
     
-    XpiDX = []
+    XpX = []
     for j in 1:nMarkers
         this = Array{Float64}(nTraits,nTraits)
-        this[1,1] = dot((X1[:,j].*w),X1[:,j])
-        this[2,2] = dot((X2[:,j].*w2),X2[:,j])
+        this[1,1] = dot(X1[:,j],X1[:,j])
+        this[2,2] = dot(X2[:,j],X2[:,j])
         this[1,2] =this[2,1] =0.0
-        XpiDX = push!(XpiDX,this)
+        XpX = push!(XpX,this)
     end
-    XpiD             = iD*X1
-    XpiD2            = iD2*X2
         
     Ycorr1 = Y1 .- μ[1]
     Ycorr2 = Y2 .- μ[2]
@@ -363,7 +357,7 @@ const    scaleRes2    = varResidual2*(dfRes-2.0)/dfRes
             regionSize = length(theseLoci)
             invB = inv(covBeta[r])
             for locus in theseLoci::UnitRange{Int64}
-                sampleBeta_shaoLei!(tempBetaMat,nTraits,X1,X2,XpiD,XpiD2,Ri,locus,XpiDX,Ycorr1,Ycorr2,invB)
+                sampleBeta_shaoLei!(tempBetaMat,nTraits,X1,X2,Ri,locus,Ycorr1,Ycorr2,invB)
             end
             covBeta[r] = sampleCovBeta(dfβ,regionSize,Vb,tempBetaMat, theseLoci)
         end
@@ -372,11 +366,11 @@ const    scaleRes2    = varResidual2*(dfRes-2.0)/dfRes
     GC.gc()
 end
 
-function sampleBeta_shaoLei!(tempBetaMat,nTraits,X1,X2,XpiD,XpiD2,Ri,locus,XpiDX,Ycorr1,Ycorr2,invB)
+function sampleBeta_shaoLei!(tempBetaMat,nTraits,X1,X2,Ri,locus,Ycorr1,Ycorr2,invB)
     Ycorr1 .+= view(X1,:,locus).*view(tempBetaMat,1,locus)
     Ycorr2 .+= view(X2,:,locus).*view(tempBetaMat,2,locus)
-    rhs     = [view(XpiD,:,locus)'*view(Ycorr1,:,1)*Ri[1];view(XpiD2,:,locus)'*view(Ycorr2,:,1)*Ri[4]]
-    invLhs  = inv(XpiDX[locus].*Ri .+ invB)    
+    rhs     = [view(X1,:,locus)'*view(Ycorr1,:,1)*Ri[1];view(X2,:,locus)'*view(Ycorr2,:,1)*Ri[4]]
+    invLhs  = inv(XpX[locus].*Ri .+ invB)    
     meanBeta = invLhs*rhs
     tempBetaMat[:,locus] = rand(MvNormal(meanBeta,convert(Array,Symmetric(invLhs))))
     Ycorr1 .-= view(X1,:,locus).*view(tempBetaMat,1,locus)
