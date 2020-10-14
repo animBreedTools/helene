@@ -331,8 +331,8 @@ const    scaleRes2    = varResidual2*(dfRes-2.0)/dfRes
     
     for iter in 1:chainLength
         #sample residual var
-        R1 = sampleVarE_w(νS_e1,Ycorr1,w,df_e,nRecords1)
-        R2 = sampleVarE_w(νS_e2,Ycorr2,w2,df_e,nRecords2)
+        R1 = sampleVarE(νS_e1,Ycorr1,df_e,nRecords1)
+        R2 = sampleVarE(νS_e2,Ycorr2,df_e,nRecords2)
         Rmat = [R1 0;0 R2]
         Ri = inv(Rmat)
 
