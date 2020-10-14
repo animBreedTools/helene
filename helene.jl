@@ -264,3 +264,152 @@ function fastInv(a::Matrix)
     c[4] = a[1] * inv_d
     return c
 end
+
+function w_mtBayesPR_shaoLei(genoTrain::DataFrame,genoTrain2::DataFrame, phenoTrain, phenoTrain2,weights,weights2,snpInfo::String, chrs::Int64, fixedRegSize::Int64, varGenotypic::Array{Float64}, varResidual1::Float64,varResidual2::Float64,chainLength::Int64, burnIn::Int64, outputFreq::Int64, onScreen::Bool)
+    SNPgroups = prepRegionData(snpInfo, chrs, genoTrain, fixedRegSize)
+    these2Keep = collect((burnIn+outputFreq):outputFreq:chainLength) #print these iterations
+    nRegions    = length(SNPgroups)
+    println("number of regions: ", nRegions)
+    dfEffect    = 3.0
+    dfRes       = 3.0
+    X1           = convert(Array{Float64}, genoTrain[:,2:end])  #first colum is ID
+    X2           = convert(Array{Float64}, genoTrain2[:,2:end])  #first colum is ID
+    genoTrain  = 0 #release memory
+    genoTrain2 = 0
+    println("X is this size", size(X1),size(X2))
+    Y1           = convert(Array{Float64}, phenoTrain)
+    Y2           = convert(Array{Float64}, phenoTrain2)
+    println("Y1 is this size", size(Y1))
+    println("Y2 is this size", size(Y2))
+    nTraits, nRecords1, nRecords2 , nMarkers   = 2, size(Y1,1), size(Y2,1), size(X1,2)
+    w           = convert(Array{Float64}, weights)
+    iD          = full(Diagonal(w))  # Dii is wii=r2/(1-r2)==>iDii is (1-r2)/r2
+    w2           = convert(Array{Float64}, weights2)
+    iD2          = full(Diagonal(w2))  # Dii is wii=r2/(1-r2)==>iDii is (1-r2)/r2
+    fileControl(nTraits,fixedRegSize)
+    p1           = mean(X1,dims=1)./2.0
+    sum2pq1      = sum(2*(1 .- p1).*p1)
+    
+    p2           = mean(X2,dims=1)./2.0
+    sum2pq2      = sum(2*(1 .- p2).*p2)
+
+    sum2pq       = sqrt.([sum2pq1; sum2pq2]*[sum2pq1; sum2pq2]')
+    println(sum2pq)
+    
+    #priors
+const    dfβ         = dfEffect + nTraits
+const    scaleRes1    = varResidual1*(dfRes-2.0)/dfRes    
+const    scaleRes2    = varResidual2*(dfRes-2.0)/dfRes    
+
+
+    if varGenotypic==0.0
+        covBeta  = fill([0.003 0;0 0.003],nRegions)
+        Vb       = covBeta[1]
+        else
+        covBeta  = fill(varGenotypic./sum2pq,nRegions)
+        Vb       = covBeta[1].*(dfβ-nTraits-1)
+    end
+
+    νS_e1           = scaleRes1*dfRes
+    df_e            = dfRes
+    νS_e2           = scaleRes2*dfRes
+
+    
+    #initial Beta values as "0"
+    tempBetaMat     = zeros(Float64,nTraits,nMarkers)
+    μ               = [mean(Y1) mean(Y2)]    
+    X1             .-= ones(Float64,nRecords1)*2*p1    
+    X2             .-= ones(Float64,nRecords2)*2*p2
+    
+    XpiDX = []
+    for j in 1:nMarkers
+        this = Array{Float64}(nTraits,nTraits)
+        this[1,1] = dot((X1[:,j].*w),X1[:,j])
+        this[2,2] = dot((X2[:,j].*w2),X2[:,j])
+        this[1,2] =this[2,1] =0.0
+        XpiDX = push!(XpiDX,this)
+    end
+    XpiD             = iD*X1
+    XpiD2            = iD2*X2
+        
+    Ycorr1 = Y1 .- μ[1]
+    Ycorr2 = Y2 .- μ[2]
+    
+    for iter in 1:chainLength
+        #sample residual var
+        R1 = sampleVarE_w(νS_e1,Ycorr1,w,df_e,nRecords1)
+        R2 = sampleVarE_w(νS_e2,Ycorr2,w2,df_e,nRecords2)
+        Rmat = [R1 0;0 R2]
+        Ri = inv(Rmat)
+
+        Ycorr1 = Ycorr1 .+ μ[1]
+        Ycorr2 = Ycorr2 .+ μ[2] 
+        
+        rhs = sum(view(Ycorr1,:,1))
+        invLhs = 1.0/nRecords1
+        mean = rhs*invLhs
+        μ[1] = rand(Normal(mean,sqrt(invLhs*Rmat[1,1])))
+        
+        rhs = sum(view(Ycorr2,:,1))
+        invLhs = 1.0/nRecords2
+        mean = rhs*invLhs
+        μ[2] = rand(Normal(mean,sqrt(invLhs*Rmat[2,2])))
+
+        Ycorr1 = Ycorr1 .- μ[1]
+        Ycorr2 = Ycorr2 .- μ[2]
+        
+        for r in 1:nRegions
+            theseLoci = SNPgroups[r]
+            regionSize = length(theseLoci)
+            invB = inv(covBeta[r])
+            for locus in theseLoci::UnitRange{Int64}
+                sampleBeta_shaoLei!(tempBetaMat,nTraits,X1,X2,XpiD,XpiD2,Ri,locus,XpiDX,Ycorr1,Ycorr2,invB)
+            end
+            covBeta[r] = sampleCovBeta(dfβ,regionSize,Vb,tempBetaMat, theseLoci)
+        end
+        outputControl_shaoLei(sum2pq,onScreen,iter,these2Keep,tempBetaMat,μ,covBeta,Rmat,fixedRegSize,nRegions)
+    end
+    GC.gc()
+end
+
+function sampleBeta_shaoLei!(tempBetaMat,nTraits,X1,X2,XpiD,XpiD2,Ri,locus,XpiDX,Ycorr1,Ycorr2,invB)
+    Ycorr1 .+= view(X1,:,locus).*view(tempBetaMat,1,locus)
+    Ycorr2 .+= view(X2,:,locus).*view(tempBetaMat,2,locus)
+    rhs     = [view(XpiD,:,locus)'*view(Ycorr1,:,1)*Ri[1];view(XpiD2,:,locus)'*view(Ycorr2,:,1)*Ri[4]]
+    invLhs  = inv(XpiDX[locus].*Ri .+ invB)    
+    meanBeta = invLhs*rhs
+    tempBetaMat[:,locus] = rand(MvNormal(meanBeta,convert(Array,Symmetric(invLhs))))
+    Ycorr1 .-= view(X1,:,locus).*view(tempBetaMat,1,locus)
+    Ycorr2 .-= view(X2,:,locus).*view(tempBetaMat,2,locus)
+end
+
+function outputControl_shaoLei(sum2pq,onScreen,iter,these2Keep,tempBetaMat,μ,covBeta,varE,fixedRegSize,nRegions)
+    if iter in these2Keep
+        out0 = open(pwd()*"/muOutMT$fixedRegSize", "a")
+        writecsv(out0, μ)
+        close(out0)
+        for t in 1:2
+            out1 = open(pwd()*"/beta"*"$t"*"OutMT$fixedRegSize", "a")
+            writecsv(out1, tempBetaMat[t,:]')
+            close(out1)
+        end
+        outCov = open(pwd()*"/covBetaOutMT$fixedRegSize", "a")
+        printThis = [vcat(covBeta[r]...) for r in 1:nRegions]'
+        writecsv(outCov, printThis)
+        close(outCov)
+        out3 = open(pwd()*"/varEOutMT$fixedRegSize", "a")
+        writecsv(out3, vec(varE)')
+        close(out3)
+        coVarBeta = cov(tempBetaMat')
+        genCov    = sum2pq.*coVarBeta
+        out4 = open(pwd()*"/varUOutMT$fixedRegSize", "a")
+        writecsv(out4, vec(genCov)')
+        close(out4)
+        if onScreen==true
+            corBeta   = cor(tempBetaMat') 
+            println("iter $iter \n coVarBeta (Overall): $coVarBeta \n genCov: $genCov \n corBeta: $corBeta \n varE: $varE \n")
+        elseif onScreen==false
+             @printf("iter %s\n", iter)
+        end
+    end
+end
