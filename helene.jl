@@ -289,7 +289,10 @@ function w_mtBayesPR_shaoLei(genoTrain::DataFrame,genoTrain2::DataFrame, phenoTr
     p2           = mean(X2,dims=1)./2.0
     sum2pq2      = sum(2*(1 .- p2).*p2)
 
-    sum2pq       = sqrt.([sum2pq1; sum2pq2]*[sum2pq1; sum2pq2]')
+    sum2pq12 = 2*sum(sqrt.(p1.*(1-p1).*p2.*(1-p2)))
+    
+    sum2pq = [sum2pq1 sum2pq12;sum2pq12 sum2pq2]
+#    sum2pq       = sqrt.([sum2pq1; sum2pq2]*[sum2pq1; sum2pq2]')
     println(sum2pq)
     
     #priors
